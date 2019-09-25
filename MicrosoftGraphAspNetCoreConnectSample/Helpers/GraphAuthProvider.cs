@@ -11,7 +11,10 @@ namespace MicrosoftGraphAspNetCoreConnectSample.Helpers
 	using Microsoft.Identity.Client;
 	using MicrosoftGraphAspNetCoreConnectSample.Extensions;
 	using System;
+	using System.Security.Cryptography.X509Certificates;
 	using System.Threading.Tasks;
+	using System.Collections.Generic;
+	using System.Net.Http;
 
 
 	public class GraphAuthProvider : IGraphAuthProvider
@@ -24,13 +27,19 @@ namespace MicrosoftGraphAspNetCoreConnectSample.Helpers
 			var azureOptions = new AzureAdOptions();
 			configuration.Bind("AzureAd", azureOptions);
 
+
+
+			var certificateThumbprint = azureOptions.CertificateThumbprint;
+			// defaulting to CurrentUser certificate store under My (Personal), change these if stored elsewhere
+			X509Certificate2 cert = GetCertificate(certificateThumbprint, StoreName.My, StoreLocation.CurrentUser);
+
 			// More info about MSAL Client Applications: https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/wiki/Client-Applications
 			_app = ConfidentialClientApplicationBuilder.Create(azureOptions.ClientId)
-				.WithClientSecret(azureOptions.ClientSecret)
-				.WithTenantId(azureOptions.TenantId)
+				//.WithClientSecret(azureOptions.ClientSecret)
 				//.WithAuthority(azureCloudInstance: AzureCloudInstance.AzurePublic, authorityAudience: AadAuthorityAudience.AzureAdMyOrg)
 				.WithAuthority(azureCloudInstance: AzureCloudInstance.AzurePublic, tenantId: new Guid(azureOptions.TenantId))
 				.WithRedirectUri(azureOptions.BaseUrl + azureOptions.CallbackPath)
+				.WithCertificate(cert)
 				.Build();
 			Authority = _app.Authority;
 			_scopes = azureOptions.GraphScopes.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
@@ -68,6 +77,28 @@ namespace MicrosoftGraphAspNetCoreConnectSample.Helpers
 		{
 			return await _app.AcquireTokenByAuthorizationCode(_scopes, authorizationCode).ExecuteAsync();
 		}
+
+		private static X509Certificate2 GetCertificate(string thumbprint, StoreName storeName, StoreLocation storeLocation)
+		{
+			X509Store store = new X509Store(storeName, storeLocation);
+			try
+			{
+				store.Open(OpenFlags.ReadOnly);
+
+				var col = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, false);
+				if (col == null || col.Count == 0)
+				{
+					return null;
+				}
+				return col[0];
+			}
+			finally
+			{
+				store.Close();
+			}
+		}
+
+
 	}
 
 	public interface IGraphAuthProvider
